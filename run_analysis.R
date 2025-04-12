@@ -1,93 +1,66 @@
+#### Scripts for cleaning and processing the input dataset "Human Activity Recognition Using Smartphones"
 
-#Step 0. Downloading and unzipping dataset
+## Load library
+library(dplyr)
 
-if(!file.exists("./data")){dir.create("./data")}
-#Here are the data for the project:
-fileUrl <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
-download.file(fileUrl,destfile="./data/Dataset.zip")
+## Load input dataset
+# Download input datasets from "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
+# Moving the files to the working directory
+# sep = "" treats any whitespace—whether it's a single space, multiple spaces, or tabs—as a delimiter between columns.
+subject_test <- read.table("./UCI HAR Dataset/test/subject_test.txt", sep = "")
+X_test <- read.table("./UCI HAR Dataset/test/X_test.txt", sep = "")
+y_test <- read.table("./UCI HAR Dataset/test/y_test.txt", sep = "")
+subject_train <- read.table("./UCI HAR Dataset/train/subject_train.txt", sep = "")
+X_train <- read.table("./UCI HAR Dataset/train/X_train.txt", sep = "")
+y_train <- read.table("./UCI HAR Dataset/train/y_train.txt", sep = "")
 
-# Unzip dataSet to /data directory
-unzip(zipfile="./data/Dataset.zip",exdir="./data")
+## Creating data.frames for "test" and "train" groups before merging
+df_test <- data.frame(subject_test, y_test, X_test)
+df_train <- data.frame(subject_train, y_train, X_train)
 
-#Step 1.Merges the training and the test sets to create one data set.
+features <- read.table("./UCI HAR Dataset/features.txt", sep = "", row.names = 1)
+colnames(df_test) <- c("subject", "activity", features[,1])
+colnames(df_train) <- c("subject", "activity", features[,1])
 
-# 1.1 Reading files
+## 1 Merges the training and the test sets to create one data set.
+df_all <- rbind(df_test, df_train)
 
-# 1.1.1  Reading training tables:
-
-x_train <- read.table("./data/UCI HAR Dataset/train/X_train.txt")
-y_train <- read.table("./data/UCI HAR Dataset/train/y_train.txt")
-subject_train <- read.table("./data/UCI HAR Dataset/train/subject_train.txt")
-
-# 1.1.2 Reading testing tables:
-x_test <- read.table("./data/UCI HAR Dataset/test/X_test.txt")
-y_test <- read.table("./data/UCI HAR Dataset/test/y_test.txt")
-subject_test <- read.table("./data/UCI HAR Dataset/test/subject_test.txt")
-
-# 1.1.3 Reading feature vector:
-features <- read.table('./data/UCI HAR Dataset/features.txt')
-
-# 1.1.4 Reading activity labels:
-activityLabels = read.table('./data/UCI HAR Dataset/activity_labels.txt')
-
-# 1.2 Assigning column names:
-
-colnames(x_train) <- features[,2]
-colnames(y_train) <-"activityId"
-colnames(subject_train) <- "subjectId"
-
-colnames(x_test) <- features[,2] 
-colnames(y_test) <- "activityId"
-colnames(subject_test) <- "subjectId"
-
-colnames(activityLabels) <- c('activityId','activityType')
-
-#1.3 Merging all data in one set:
-
-mrg_train <- cbind(y_train, subject_train, x_train)
-mrg_test <- cbind(y_test, subject_test, x_test)
-setAllInOne <- rbind(mrg_train, mrg_test)
-
-#dim(setAllInOne)
-#[1] 10299   563
-
-#Step 2.-Extracts only the measurements on the mean and standard deviation for each measurement.
+## 2 Extracts only the measurements on the mean and standard deviation for each measurement.
+# select the columns with "mean()" or "std()".     # "meanFreq()" is NOT the one that we should include
+grep("mean\\(\\)|std\\(\\)", colnames(df_all))
+table(grepl("mean\\(\\)|std\\(\\)", colnames(df_all)))
+features_mean_std <- grep("mean\\(\\)|std\\(\\)", colnames(df_all), value = TRUE)
+df_all_sub <- df_all %>% select(subject, activity, all_of(features_mean_std)) 
+# all_of(): If any columns in features_mean_std are missing from the data frame, it will raise an error.
 
 
-#2.1 Reading column names:
+## 3 Uses descriptive activity names to name the activities in the data set
+df_all_sub2 <- df_all_sub %>% 
+  mutate(activity = recode(activity, "1" = "Walking", "2" = "Walking_upstairs", 
+                           "3" = "Walking_downstairs", "4" = "Sitting", "5" = "Standing", "6" = "Laying"))
 
-colNames <- colnames(setAllInOne)
+## 4 Appropriately labels the data set with descriptive variable names.
+# Remove "()"
+colnames(df_all_sub2) <- gsub("\\(\\)", "", colnames(df_all_sub2))
+# Replace "-" with "_"
+colnames(df_all_sub2) <- gsub("-", "_", colnames(df_all_sub2))
+# Replace the initial "t" with "time"
+colnames(df_all_sub2) <- gsub("^t", "time", colnames(df_all_sub2))
+# Replace the initial "f" with "freqeuncy"
+colnames(df_all_sub2) <- gsub("^f", "frequency", colnames(df_all_sub2))
 
-#2.2 Create vector for defining ID, mean and standard deviation:
+## 5 From the data set in step 4, creates a second, independent tidy data set 
+## with the average of each variable for each activity and each subject.
 
-mean_and_std <- (grepl("activityId" , colNames) | 
-                   grepl("subjectId" , colNames) | 
-                   grepl("mean.." , colNames) | 
-                   grepl("std.." , colNames) 
-)
+# across() of dplyr apply a function (like mean(), sum()) across multiple columns of a data frame
+# where() of dplyr is used inside across() to specify which columns to apply a function to
+# where() could select columns of a certain data type (is.numeric, is.character, is.logical, etc.).
+df_all_sub2_mean <- df_all_sub2 %>%
+  group_by(subject, activity) %>%
+  summarize_all(mean)        
 
-#2.3 Making nessesary subset from setAllInOne:
-
-setForMeanAndStd <- setAllInOne[ , mean_and_std == TRUE]
-
-#Step 3. Uses descriptive activity names to name the activities in the data set
-
-setWithActivityNames <- merge(setForMeanAndStd, activityLabels,
-                              by='activityId',
-                              all.x=TRUE)
-
-
-#Step 4. Appropriately labels the data set with descriptive variable names.
-#done above
-
-#Step 5. From the data set in step 4, creates a second, independent tidy data set with the average of each variable for each activity and each subject.
-
-
-#5.1 Making a second tidy data set
-
-secTidySet <- aggregate(. ~subjectId + activityId, setWithActivityNames, mean)
-secTidySet <- secTidySet[order(secTidySet$subjectId, secTidySet$activityId),]
-
-#5.2 Writing second tidy data set in txt file
-
-write.table(secTidySet, "secTidySet.txt", row.name=FALSE)
+# Save "df_all_sub2_mean" as "tidy_data.txt"   
+write.table(df_all_sub2_mean, "tidy_data.txt", row.names = FALSE, col.names = TRUE)
+# Check the saved txt file
+tidy_data <- read.table("tidy_data.txt", header = TRUE) 
+View(tidy_data)
